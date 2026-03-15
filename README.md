@@ -110,6 +110,13 @@ Binds to `127.0.0.1` (loopback) by default.
 
 ---
 
+## Operational Notes
+
+- [Logging Best Practices](docs/logging.md)
+- [First-Run Observability Gaps](docs/first_run_observability_gaps.md)
+
+---
+
 ## Architecture
 
 ```
