@@ -16,6 +16,20 @@ interface MockLinearServer {
 async function startMockLinearServer(): Promise<MockLinearServer> {
   let candidateCalls = 0;
   let terminalCalls = 0;
+  const dispatchableIssue = {
+    id: "issue-1",
+    identifier: "SMOKE-1",
+    title: "Dispatchable smoke issue",
+    description: "Validate dispatch path",
+    priority: 2,
+    branchName: "smoke/dispatchable-issue",
+    url: "https://linear.app/smoke/issue/SMOKE-1",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+    state: { name: "Todo" },
+    labels: { nodes: [{ name: "smoke" }] },
+    relations: { nodes: [] },
+  };
 
   const server = http.createServer((req, res) => {
     if (req.method !== "POST") {
@@ -56,7 +70,7 @@ async function startMockLinearServer(): Promise<MockLinearServer> {
           JSON.stringify({
             data: {
               issues: {
-                nodes: [],
+                nodes: candidateCalls === 1 ? [dispatchableIssue] : [],
                 pageInfo: { hasNextPage: false, endCursor: null },
               },
             },
@@ -91,9 +105,12 @@ async function startMockLinearServer(): Promise<MockLinearServer> {
   };
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 3000): Promise<void> {
+async function waitFor(
+  predicate: () => boolean | Promise<boolean>,
+  timeoutMs = 3000
+): Promise<void> {
   const start = Date.now();
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() - start > timeoutMs) {
       throw new Error("timeout waiting for condition");
     }
@@ -131,6 +148,9 @@ polling:
   interval_ms: 60000
 workspace:
   root: ${tmpDir}/workspaces
+codex:
+  command: true
+  read_timeout_ms: 100
 ---
 Work on {{ issue.identifier }}.
 `,
@@ -151,11 +171,20 @@ Work on {{ issue.identifier }}.
     cleanupFns.push(() => server.close());
     const { port } = await server.listen(0);
 
+    const workspacePath = path.join(tmpDir, "workspaces", "SMOKE-1");
+    await waitFor(async () => {
+      try {
+        await fs.stat(workspacePath);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
     const stateRes = await fetch(`http://127.0.0.1:${port}/api/v1/state`);
     expect(stateRes.status).toBe(200);
     const stateJson = (await stateRes.json()) as { counts: { running: number; retrying: number } };
-    expect(stateJson.counts.running).toBe(0);
-    expect(stateJson.counts.retrying).toBe(0);
+    expect(stateJson.counts.running + stateJson.counts.retrying).toBeGreaterThanOrEqual(1);
 
     const dashboardRes = await fetch(`http://127.0.0.1:${port}/`);
     expect(dashboardRes.status).toBe(200);
